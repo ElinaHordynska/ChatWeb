@@ -36,14 +36,14 @@ let ser = http.createServer((req, res)=>{
 
 let io = new Server(ser);
 
-let message = []
-
-io.on("connection", function(s){
+io.on("connection",async function(s){
     console.log(s.id)
+    let messages = await db.getMessages()
+    messages = messages.map(m=> ({name: m.login, text: m.content}))
+    io.emit("update", JSON.stringify(messages))
     s.on("message", (data)=>{
         console.log(data)
         message.push(data)
         s.emit("update", JSON.stringify(message))
     })
 })
-
