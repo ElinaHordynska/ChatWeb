@@ -5,6 +5,7 @@ let path = require("path")
 let fs = require("fs")
 let { Server } = require("socket.io")
 let bcrypt = require("bcrypt")
+let jwt = require("jsonwebtoken")
 
 let pathToIndex = path.join(__dirname, "static", "index.html")
 let index = fs.readFileSync(pathToIndex, "utf-8")
@@ -27,6 +28,7 @@ let auth = fs.readFileSync(pathToAuth, "utf-8")
 let ser = http.createServer((req, res) => {
     switch (req.url) {
         case "/":
+            if(!guarded(req, res))return
             res.writeHead(200, { "content-type": "text/html" })
             res.end(index)
             break;
@@ -63,10 +65,28 @@ let ser = http.createServer((req, res) => {
                     res.end("User exist")
                     return
                 }
-                await db.addUser(data.login, hash).catch(err=>console.log(err))
-                res.writeHead(302, { "location": "/login" })
-                res.end(JSON.stringify({ satus: "ok" }))
+                await db.addUser(data.login, hash)
+
+                res.end(JSON.stringify({link: '/login'}));
             })
+            break;
+        case "/api/login":
+            let data1 = ""
+            req.on("data", chunk => data1 += chunk)
+            req.on("end", async () => {
+                let {login, password} = JSON.parse(data1)
+                let info = await db.getUser(login)
+                if(info.length == 0){
+                    res.end(JSON.stringify({status: "неправильно введені дані"}))
+                    return
+                }
+                if(await bcrypt.compare(password, info[0].password)){
+                    let token = jwt.sign({login, id: info[0].id}, "Nikita", {expiresIn: "1h"})
+                    res.end(JSON.stringify({status: "ok", token, login: info[0].login, id: info[0].id}))
+                }else{
+                    res.end(JSON.stringify({status: "неправильно введені дані"}))
+                }
+            });
             break;
         default:
             res.writeHead(404, { "content-type": "text/html" })
@@ -81,9 +101,29 @@ io.on("connection", async function (s) {
     let messages = await db.getMessages()
     messages = messages.map(m => ({ name: m.login, text: m.content }))
     io.emit("update", JSON.stringify(messages))
-    s.on("message", (data) => {
-        console.log(data)
-        message.push(data)
-        s.emit("update", JSON.stringify(message))
-    })
-})
+    s.on("message", async (data) => {
+        data = JSON.parse(data)
+        await db.addMessage(data.text, data.name);
+        let messages = await db.getMessages();
+        messages = messages.map((m) => ({ name: m.login, text: m.content}));
+        io.emit("update", JSON.stringify(messages))
+    });
+});
+
+function guarded(req, res){
+    if(req.headers.cookie == undefined ){
+        res.writeHead(302, {"location": "/register"})
+        res.end();
+        return
+    }
+    let cookies = req.headers.cookie.split("; ")
+    let token = cookies.find(el=>el.startsWith("token")).split("=")[1]
+    let decoded = jwt.decode(token, "Nikita")
+    if(!decoded){
+        res.writeHead(302, {"location": "/register"})
+        res.end();
+        return
+    }else{
+        return decoded
+    }
+}

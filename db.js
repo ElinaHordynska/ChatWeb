@@ -7,6 +7,7 @@ let db = mysql.createConnection({
     user: process.env.USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
+    connectTimeout: 10000
 })
 
 let asyncDB = db.promise();
@@ -24,6 +25,15 @@ async function checkExists(login) {
     try {
         let [rows, fields] = await asyncDB.query("select * from User where login = ?", [login]);
         return rows.length > 0;
+    } catch (err) {
+        throw err.message;
+    }
+}
+
+async function getUser(login) {
+    try {
+        let [rows, fields] = await asyncDB.query("select * from User where login = ?", [login]);
+        return rows
     } catch (err) {
         throw err.message;
     }
@@ -61,5 +71,6 @@ module.exports = {
     getMessages,
     addMessage,
     checkExists,
-    addUser
+    addUser,
+    getUser
 };
